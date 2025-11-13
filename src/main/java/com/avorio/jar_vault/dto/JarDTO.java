@@ -9,9 +9,8 @@ import lombok.*;
 @Setter
 public class JarDTO {
 
+    private  Long id;
     private String name;
     private String version;
-    private String hash;
-    private String filePath;
     private Long size;
 }

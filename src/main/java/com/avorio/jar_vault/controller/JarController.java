@@ -1,11 +1,15 @@
 package com.avorio.jar_vault.controller;
 
 
+import com.avorio.jar_vault.dto.BatchDeleteRequest;
+import com.avorio.jar_vault.dto.JarDTO;
+import com.avorio.jar_vault.dto.Message;
 import com.avorio.jar_vault.service.JarService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -21,6 +25,17 @@ public class JarController {
     @PostMapping("/upload")
     public ResponseEntity<String> uploadJar(MultipartFile file) {
         jarService.uploadJar(file);
-        return ResponseEntity.ok("Hello World");
+        return ResponseEntity.ok("Jar uploaded successfully");
+    }
+
+    @GetMapping("/get/all")
+    public ResponseEntity<Page<JarDTO>> getJars(@PageableDefault(size = 20)Pageable pageable){
+        return ResponseEntity.ok(jarService.getAllJars(pageable));
+    }
+
+    @PostMapping("/delete")
+    public ResponseEntity<Message> batchDeleteJars(@RequestBody BatchDeleteRequest request) {
+        jarService.deleteBatchJars(request);
+        return ResponseEntity.ok(new Message("Jars deleted successfully"));
     }
 }

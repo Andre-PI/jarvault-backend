@@ -1,5 +1,6 @@
 package com.avorio.jar_vault.utils;
 
+import com.avorio.jar_vault.dto.JarDTO;
 import com.avorio.jar_vault.exception.AlgorithmErrorException;
 import com.avorio.jar_vault.exception.JarAlreadyExists;
 import com.avorio.jar_vault.model.Jars;
@@ -74,6 +75,14 @@ public class JarUtil {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
 
+    public JarDTO convertToDTO(Jars jar) {
+        JarDTO jarDTO = new JarDTO();
+        jarDTO.setId(jar.getId());
+        jarDTO.setName(jar.getName());
+        jarDTO.setVersion(jar.getVersion());
+        jarDTO.setSize(jar.getSize());
+        return jarDTO;
     }
 }

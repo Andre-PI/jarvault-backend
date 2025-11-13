@@ -5,11 +5,10 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.sql.Timestamp;
-import java.util.UUID;
 
-@Entity(name = "jars")
 @Getter
 @Setter
+@Entity(name = "jars")
 public class Jars {
 
     @Id
