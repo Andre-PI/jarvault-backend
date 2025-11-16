@@ -15,9 +15,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
-
-import static javax.xml.crypto.dsig.DigestMethod.SHA256;
 
 
 
@@ -32,7 +31,7 @@ public class JarUtil {
         this.jarsRepository = jarsRepository;
     }
 
-    public Jars prepareJarModel(MultipartFile jarFile) {
+    public Jars prepareJarModel(MultipartFile jarFile, Map<String, String> payload) {
         if(jarFile.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
@@ -45,9 +44,12 @@ public class JarUtil {
         if(jarsRepository.existsByHash(jars.getHash())) {
             throw new JarAlreadyExists("This jar already exists in the database");
         }
+        System.out.println(jarFile);
         jars.setName(jarFile.getOriginalFilename());
         jars.setSize(jarFile.getSize());
-        jars.setVersion("1.20.1");
+        jars.setVersion(payload.get("version"));
+        jars.setLoader(payload.get("loader"));
+        jars.setProjectId(payload.get("projectId"));
         jars.setFilePath(directoryPath + jarFile.getOriginalFilename());
         jars.setUploadedAt(Timestamp.from(Instant.now()));
         return jars;
@@ -56,7 +58,7 @@ public class JarUtil {
     private String hashJar(MultipartFile jarFile) {
         MessageDigest digest;
         try {
-            digest = MessageDigest.getInstance("SHA256");
+            digest = MessageDigest.getInstance("SHA512");
             InputStream inputStream = jarFile.getInputStream();
             byte[] byteArray = new byte[8192];
             int bytesCount;

@@ -1,5 +1,6 @@
 package com.avorio.jar_vault.dto;
 
+import com.avorio.jar_vault.dto.modrinth.ModrinthProjectInfoDTO;
 import lombok.*;
 
 @AllArgsConstructor
@@ -13,4 +14,5 @@ public class JarDTO {
     private String name;
     private String version;
     private Long size;
+    private ModrinthProjectInfoDTO clientRequiredMods;
 }

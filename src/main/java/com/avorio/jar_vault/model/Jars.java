@@ -33,5 +33,12 @@ public class Jars {
     @Column(name = "size_bytes", nullable = false)
     private Long size;
 
+    @Column(name = "project_id")
+    private String projectId;
+
+    @Column(name = "loader")
+    private String loader;
+
+
 
 }

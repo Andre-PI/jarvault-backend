@@ -10,4 +10,6 @@ public interface JarsRepository extends JpaRepository<Jars, Long> {
     Jars findByHash(String hash);
 
     boolean existsByHash(String hash);
+
+    boolean existsByName(String name);
 }
