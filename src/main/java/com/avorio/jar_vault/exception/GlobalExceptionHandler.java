@@ -41,4 +41,8 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(503).body(new Message("Modrinth API is offline: " + ex.getMessage()));
     }
 
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Message> handleResourceNotFoundException(ResourceNotFoundException ex) {
+        return ResponseEntity.status(404).body(new Message("Resource not found: " + ex.getMessage()));
+    }
 }

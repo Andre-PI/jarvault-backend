@@ -3,7 +3,6 @@ package com.avorio.jar_vault.controller;
 import com.avorio.jar_vault.dto.GameVersionDTO;
 import com.avorio.jar_vault.dto.Message;
 import com.avorio.jar_vault.dto.modrinth.*;
-import com.avorio.jar_vault.service.JarService;
 import com.avorio.jar_vault.service.ModrinthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +15,7 @@ public class ModrinthController {
 
     private final ModrinthService modrinthService;
 
-    public ModrinthController(ModrinthService modrinthService, JarService jarService) {
+    public ModrinthController(ModrinthService modrinthService) {
         this.modrinthService = modrinthService;
     }
 
@@ -124,5 +123,41 @@ public class ModrinthController {
         System.out.printf("Received request for project info: projectId=%s, loaders=%s, gameVersions=%s%n", projectId, loaders, gameVersions);
         List<ModrinthProjectInfoDTO> projectInfo = modrinthService.getProjectInfo(projectId,loaders,gameVersions);
         return ResponseEntity.ok(projectInfo);
+    }
+
+    @GetMapping("/project/dependencies")
+    public ResponseEntity<ModrinthProjectsResponse> getDependenciesFromProject(@RequestParam String projectId) {
+        ModrinthProjectsResponse dependencies = modrinthService.getDependenciesFromProject(projectId);
+        return ResponseEntity.ok(dependencies);
+    }
+
+    @GetMapping("/project/client-dependencies")
+    public ResponseEntity<List<ModrinthVersionDTO>> getClientDependenciesFromProject(@RequestParam String projectId, @RequestParam(required = false) String loader, @RequestParam(required = false, name = "game_version") String gameVersion) {
+        List<ModrinthVersionDTO> clientDependencies = modrinthService.getClientDependenciesFromProject(projectId, loader, gameVersion);
+        return ResponseEntity.ok(clientDependencies);
+    }
+
+    @GetMapping("/version/{versionId}/dependencies/transitive")
+    public ResponseEntity<List<EnrichedDependencyDTO>> getTransitiveDependencies(
+            @PathVariable String versionId,
+            @RequestParam(required = false, name = "dependency_type") String dependencyType,
+            @RequestParam(required = false, defaultValue = "3", name = "max_depth") int maxDepth
+    ) {
+        List<EnrichedDependencyDTO> dependencies = modrinthService.getTransitiveDependencies(versionId, dependencyType, maxDepth);
+        return ResponseEntity.ok(dependencies);
+    }
+
+    @GetMapping("/project/{projectId}/dependencies/transitive")
+    public ResponseEntity<List<EnrichedDependencyDTO>> getProjectTransitiveDependencies(
+            @PathVariable String projectId,
+            @RequestParam String loader,
+            @RequestParam(name = "game_version") String gameVersion,
+            @RequestParam(required = false, name = "dependency_type") String dependencyType,
+            @RequestParam(required = false, defaultValue = "3", name = "max_depth") int maxDepth
+    ) {
+        List<EnrichedDependencyDTO> dependencies = modrinthService.getProjectTransitiveDependencies(
+                projectId, loader, gameVersion, dependencyType, maxDepth
+        );
+        return ResponseEntity.ok(dependencies);
     }
 }

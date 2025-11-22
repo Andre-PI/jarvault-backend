@@ -1,6 +1,7 @@
 package com.avorio.jar_vault.utils;
 
 import com.avorio.jar_vault.dto.JarDTO;
+import com.avorio.jar_vault.dto.modrinth.JarModInfo;
 import com.avorio.jar_vault.exception.AlgorithmErrorException;
 import com.avorio.jar_vault.exception.JarAlreadyExists;
 import com.avorio.jar_vault.model.Jars;
@@ -17,7 +18,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
-
+import java.util.Optional;
 
 
 @Component
@@ -31,7 +32,8 @@ public class JarUtil {
         this.jarsRepository = jarsRepository;
     }
 
-    public Jars prepareJarModel(MultipartFile jarFile, Map<String, String> payload) {
+    public Jars prepareJarModel(MultipartFile jarFile, Optional<JarModInfo> jarModInfo) {
+        JarModInfo payload = jarModInfo.orElse(null);
         if(jarFile.isEmpty()) {
             throw new IllegalArgumentException("File is empty");
         }
@@ -44,14 +46,24 @@ public class JarUtil {
         if(jarsRepository.existsByHash(jars.getHash())) {
             throw new JarAlreadyExists("This jar already exists in the database");
         }
-        System.out.println(jarFile);
+        if(payload == null) {
+            jars.setName(jarFile.getOriginalFilename());
+            jars.setSize(jarFile.getSize());
+            jars.setVersion("unknown");
+            jars.setLoader("unknown");
+            jars.setProjectId("unknown");
+            jars.setFilePath(directoryPath + jarFile.getOriginalFilename());
+            jars.setUploadedAt(Timestamp.from(Instant.now()));
+            return jars;
+        }
         jars.setName(jarFile.getOriginalFilename());
         jars.setSize(jarFile.getSize());
-        jars.setVersion(payload.get("version"));
-        jars.setLoader(payload.get("loader"));
-        jars.setProjectId(payload.get("projectId"));
+        jars.setVersion(payload.getVersion());
+        jars.setLoader(payload.getLoader());
+        jars.setProjectId(payload.getProjectId());
         jars.setFilePath(directoryPath + jarFile.getOriginalFilename());
         jars.setUploadedAt(Timestamp.from(Instant.now()));
+        System.out.println(jars);
         return jars;
     }
 
@@ -84,6 +96,8 @@ public class JarUtil {
         jarDTO.setId(jar.getId());
         jarDTO.setName(jar.getName());
         jarDTO.setVersion(jar.getVersion());
+        jarDTO.setLoader(jar.getLoader());
+        jarDTO.setProjectId(jar.getProjectId());
         jarDTO.setSize(jar.getSize());
         return jarDTO;
     }

@@ -3,6 +3,8 @@ package com.avorio.jar_vault.service;
 import com.avorio.jar_vault.dto.BatchDeleteRequest;
 import com.avorio.jar_vault.dto.JarDTO;
 import com.avorio.jar_vault.dto.UploadPayload;
+import com.avorio.jar_vault.dto.modrinth.JarModInfo;
+import org.apache.tomcat.Jar;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -17,8 +19,8 @@ public interface JarService {
 
     void isJarInDatabase(String project, String loaders, String gameVersions);
     void isJarInDatabase(String hash);
-    void uploadJar(MultipartFile jarFile, Map<String, String> payload);
-    UploadPayload uploadBatchJars(List<MultipartFile> jarFiles, Map<String, String> payload);
+    void uploadJar(MultipartFile jarFile, JarModInfo jarModInfo);
+    UploadPayload uploadBatchJars(List<MultipartFile> jarFiles, List<JarModInfo> jarModInfo);
     JarDTO getJar(Long id);
     Page<JarDTO> getAllJars(Pageable pageable);
     void deleteBatchJars(BatchDeleteRequest request);

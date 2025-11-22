@@ -35,4 +35,14 @@ public interface ModrinthService {
     List<Categories> getCategories();
 
     List<GameVersionDTO> getMInecraftVersions();
+
+    ModrinthProjectsResponse getDependenciesFromProject(String projectId);
+
+    List<ModrinthVersionDTO> getClientDependenciesFromProject(String projectId, String loader, String gameVersion);
+
+    java.util.Map<String, ModrinthProjectDTO> getProjectsBulk(List<String> projectIds);
+
+    List<EnrichedDependencyDTO> getTransitiveDependencies(String versionId, String dependencyType, int maxDepth);
+
+    List<EnrichedDependencyDTO> getProjectTransitiveDependencies(String projectId, String loader, String gameVersion, String dependencyType, int maxDepth);
 }

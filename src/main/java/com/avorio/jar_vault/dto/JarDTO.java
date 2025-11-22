@@ -14,5 +14,7 @@ public class JarDTO {
     private String name;
     private String version;
     private Long size;
+    private String projectId;
+    private String loader;
     private ModrinthProjectInfoDTO clientRequiredMods;
 }

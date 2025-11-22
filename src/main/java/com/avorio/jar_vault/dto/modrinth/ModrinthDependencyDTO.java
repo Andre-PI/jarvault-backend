@@ -10,26 +10,12 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class EnrichedDependencyDTO {
+public class ModrinthDependencyDTO {
     @JsonProperty("project_id")
     private String projectId;
-
-    @JsonProperty("slug")
-    private String projectSlug;
-
-    @JsonProperty("name")
-    private String projectName;
-
     @JsonProperty("version_id")
     private String versionId;
-
     @JsonProperty("dependency_type")
     private String dependencyType;
-
-    @JsonProperty("icon_url")
-    private String iconUrl;
-
-    @JsonProperty("description")
-    private String description;
 }
 

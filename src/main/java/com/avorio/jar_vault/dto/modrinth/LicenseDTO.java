@@ -1,10 +1,8 @@
-package com.avorio.jar_vault.dto;
+package com.avorio.jar_vault.dto.modrinth;
 
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import lombok.*;
-
-import java.util.Map;
 
 @Getter
 @Setter
@@ -12,11 +10,8 @@ import java.util.Map;
 @AllArgsConstructor
 @Builder
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public class FileDTO {
-    private Map<String, String> hashes; // { "sha1": "...", "sha512": "..." }
+public class LicenseDTO {
+    private String id;
+    private String name;
     private String url;
-    private String filename;
-    private Boolean primary;
-    private Long size;
-    private String fileType;
 }

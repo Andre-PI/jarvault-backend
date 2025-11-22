@@ -6,7 +6,6 @@ import com.avorio.jar_vault.dto.modrinth.*;
 import com.avorio.jar_vault.exception.ApiOfflineException;
 import com.avorio.jar_vault.exception.RateLimitException;
 import com.avorio.jar_vault.exception.ResourceNotFoundException;
-import com.avorio.jar_vault.utils.JarUtil;
 import com.avorio.jar_vault.utils.ModrinthUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
@@ -23,8 +22,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,7 +34,7 @@ public class ModrinthServiceImpl implements ModrinthService {
 
     private final RestTemplate restTemplate;
 
-    public ModrinthServiceImpl(RestTemplate restTemplate, JarUtil jarUtil, ModrinthUtil modrinthUtil) {
+    public ModrinthServiceImpl(RestTemplate restTemplate, ModrinthUtil modrinthUtil) {
         this.restTemplate = restTemplate;
         this.modrinthUtil = modrinthUtil;
     }
@@ -119,11 +117,9 @@ public class ModrinthServiceImpl implements ModrinthService {
         try {
             String url = modrinthApiUrl + "/v2/project/" + projectId;
             ResponseEntity<ModrinthProjectDTO> response = restTemplate.getForEntity(url, ModrinthProjectDTO.class);
-
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new ApiOfflineException("Failed to get project from Modrinth");
             }
-
             return response.getBody();
         } catch (HttpClientErrorException.TooManyRequests e) {
             throw new RateLimitException("Rate limit excedido na Modrinth API. Aguarde antes de tentar novamente.");
@@ -286,6 +282,32 @@ public class ModrinthServiceImpl implements ModrinthService {
     public List<EnrichedDependencyDTO> getEnrichedDependencies(String versionId) {
         List<ModrinthVersionDTO.DependencyDTO> dependencies = getVersionDependencies(versionId);
 
+        if (dependencies.isEmpty()) {
+            return List.of();
+        }
+
+        // Coletar todos os projectIds únicos para fazer uma única chamada bulk
+        List<String> projectIds = dependencies.stream()
+                .map(ModrinthVersionDTO.DependencyDTO::getProjectId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (projectIds.isEmpty()) {
+            return dependencies.stream()
+                    .map(dep -> {
+                        EnrichedDependencyDTO enriched = new EnrichedDependencyDTO();
+                        enriched.setProjectId(dep.getProjectId());
+                        enriched.setVersionId(dep.getVersionId());
+                        enriched.setDependencyType(dep.getDependencyType());
+                        return enriched;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Buscar todos os projetos de uma vez (evita N+1)
+        Map<String, ModrinthProjectDTO> projectsMap = getProjectsBulk(projectIds);
+
         return dependencies.stream()
                 .map(dep -> {
                     EnrichedDependencyDTO enriched = new EnrichedDependencyDTO();
@@ -293,22 +315,66 @@ public class ModrinthServiceImpl implements ModrinthService {
                     enriched.setVersionId(dep.getVersionId());
                     enriched.setDependencyType(dep.getDependencyType());
 
-                    // Buscar informações do projeto
-                    try {
-                        ModrinthProjectDTO project = getProject(dep.getProjectId());
-                        enriched.setProjectSlug(project.getSlug());
+                    ModrinthProjectDTO project = projectsMap.get(dep.getProjectId());
+                    if (project != null) {
                         enriched.setProjectName(project.getTitle());
+                        enriched.setProjectSlug(project.getSlug());
                         enriched.setIconUrl(project.getIconUrl());
                         enriched.setDescription(project.getDescription());
-                    } catch (Exception e) {
-                        // Se falhar ao buscar o projeto, apenas deixa os campos vazios
-                        enriched.setProjectSlug(dep.getProjectId());
-                        enriched.setProjectName("Unknown");
                     }
-
                     return enriched;
                 })
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Busca múltiplos projetos de uma vez usando a API bulk da Modrinth.
+     * Evita o problema de N+1 queries.
+     */
+    @Cacheable(value = "modrinthProjectsBulk", key = "#projectIds.hashCode()")
+    @Retryable(
+            retryFor = {RestClientException.class, ApiOfflineException.class},
+            backoff = @Backoff(delay = 2000, multiplier = 2)
+    )
+    public Map<String, ModrinthProjectDTO> getProjectsBulk(List<String> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) {
+            return Map.of();
+        }
+
+        try {
+            // A API da Modrinth aceita até 100 IDs por vez
+            // Se tivermos mais, precisamos dividir em lotes
+            final int BATCH_SIZE = 100;
+            Map<String, ModrinthProjectDTO> allProjects = new java.util.HashMap<>();
+
+            for (int i = 0; i < projectIds.size(); i += BATCH_SIZE) {
+                List<String> batch = projectIds.subList(i, Math.min(i + BATCH_SIZE, projectIds.size()));
+
+                String idsParam = "[\"" + String.join("\",\"", batch) + "\"]";
+                String url = modrinthApiUrl + "/v2/projects?ids=" + idsParam;
+
+                ResponseEntity<List<ModrinthProjectDTO>> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.GET,
+                        null,
+                        new ParameterizedTypeReference<>() {}
+                );
+
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    response.getBody().forEach(project ->
+                        allProjects.put(project.getProjectId(), project)
+                    );
+                }
+            }
+
+            return allProjects;
+        } catch (HttpClientErrorException.TooManyRequests e) {
+            throw new RateLimitException("Rate limit excedido na Modrinth API. Aguarde antes de tentar novamente.");
+        } catch (ResourceAccessException e) {
+            throw new ApiOfflineException("Modrinth API está offline ou inacessível: " + e.getMessage());
+        } catch (Exception e) {
+            throw new ApiOfflineException("Failed to get projects in bulk from Modrinth: " + e.getMessage());
+        }
     }
 
     @Override
@@ -334,33 +400,263 @@ public class ModrinthServiceImpl implements ModrinthService {
     }
 
     @Override
+    @Cacheable(value = "modrinthCategories")
+    @Retryable(
+            retryFor = {RestClientException.class, ApiOfflineException.class},
+            backoff = @Backoff(delay = 2000, multiplier = 2)
+    )
     public List<Categories> getCategories() {
-        ResponseEntity<List<Categories>> response = restTemplate.exchange(modrinthApiUrl + "/v2/tag/category   ",
-                HttpMethod.GET,
-                null,
-                new ParameterizedTypeReference<>() {
-                });
-        return response.getBody();
+        try {
+            String url = modrinthApiUrl + "/v2/tag/category";
+            ResponseEntity<List<Categories>> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {}
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new ApiOfflineException("Failed to get categories from Modrinth");
+            }
+
+            return response.getBody();
+        } catch (HttpClientErrorException.TooManyRequests e) {
+            throw new RateLimitException("Rate limit excedido na Modrinth API. Aguarde antes de tentar novamente.");
+        } catch (ResourceAccessException e) {
+            throw new ApiOfflineException("Modrinth API está offline ou inacessível: " + e.getMessage());
+        } catch (Exception e) {
+            throw new ApiOfflineException("Failed to get categories from Modrinth: " + e.getMessage());
+        }
     }
 
     @Override
+    @Cacheable(value = "modrinthGameVersions")
+    @Retryable(
+            retryFor = {RestClientException.class, ApiOfflineException.class},
+            backoff = @Backoff(delay = 2000, multiplier = 2)
+    )
     public List<GameVersionDTO> getMInecraftVersions() {
+        try {
+            String url = modrinthApiUrl + "/v2/tag/game_version";
+            ResponseEntity<List<GameVersionDTO>> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {}
+            );
 
-        ResponseEntity<List<GameVersionDTO>> response = restTemplate.exchange(
-                modrinthApiUrl + "/v2/tag/game_version",
-                HttpMethod.GET,
-                null,
-                new ParameterizedTypeReference<>() {
-                });
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                return response.getBody().stream()
+                        .filter(gameVersionDTO -> "release".equals(gameVersionDTO.getVersionType()))
+                        .toList();
+            }
 
-        if(response.getStatusCode().is2xxSuccessful()){
-            return Objects.requireNonNull(response.getBody())
-                    .stream()
-                    .filter(gameVersionDTO -> gameVersionDTO.getVersionType().equals("release"))
-                    .toList();
+            throw new ApiOfflineException("Failed to get game versions from Modrinth");
+        } catch (HttpClientErrorException.TooManyRequests e) {
+            throw new RateLimitException("Rate limit excedido na Modrinth API. Aguarde antes de tentar novamente.");
+        } catch (ResourceAccessException e) {
+            throw new ApiOfflineException("Modrinth API está offline ou inacessível: " + e.getMessage());
+        } catch (Exception e) {
+            throw new ApiOfflineException("Failed to get game versions from Modrinth: " + e.getMessage());
         }
-        return List.of();
     }
 
+    @Override
+    @Cacheable(value = "modrinthProjectDependencies", key = "#projectId")
+    @Retryable(
+            retryFor = {RestClientException.class, ApiOfflineException.class},
+            backoff = @Backoff(delay = 2000, multiplier = 2)
+    )
+    public ModrinthProjectsResponse getDependenciesFromProject(String projectId) {
+        if (projectId == null || projectId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Project ID não pode ser vazio");
+        }
+
+        try {
+            String url = modrinthApiUrl + "/v2/project/" + projectId + "/dependencies";
+            ResponseEntity<ModrinthProjectsResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {}
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new ApiOfflineException("Failed to get dependencies from Modrinth");
+            }
+
+            return response.getBody();
+        } catch (HttpClientErrorException.TooManyRequests e) {
+            throw new RateLimitException("Rate limit excedido na Modrinth API. Aguarde antes de tentar novamente.");
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new ResourceNotFoundException("Dependências do projeto " + projectId + " não encontradas na Modrinth");
+        } catch (ResourceAccessException e) {
+            throw new ApiOfflineException("Modrinth API está offline ou inacessível: " + e.getMessage());
+        } catch (Exception e) {
+            throw new ApiOfflineException("Failed to get dependencies from Modrinth: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public List<ModrinthVersionDTO> getClientDependenciesFromProject(String projectId, String loader, String gameVersion) {
+        if (projectId == null || projectId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Project ID não pode ser vazio");
+        }
+        if (loader == null || loader.trim().isEmpty()) {
+            throw new IllegalArgumentException("Loader não pode ser vazio");
+        }
+        if (gameVersion == null || gameVersion.trim().isEmpty()) {
+            throw new IllegalArgumentException("Game version não pode ser vazia");
+        }
+
+        List<ModrinthVersionDTO> versions = getProjectVersions(projectId, List.of(loader), List.of(gameVersion));
+
+        if (versions == null || versions.isEmpty()) {
+            throw new ResourceNotFoundException("Nenhuma versão encontrada para o projeto " + projectId);
+        }
+
+        versions.stream()
+                .filter(ver -> ver.getLoaders().contains(loader) && ver.getGameVersions().contains(gameVersion))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Nenhuma versão compatível encontrada para loader '" + loader +
+                        "' e game version '" + gameVersion + "'"
+                ));
+
+        return versions;
+    }
+
+    @Override
+    public List<EnrichedDependencyDTO> getTransitiveDependencies(String versionId, String dependencyType, int maxDepth) {
+        if (versionId == null || versionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Version ID não pode ser vazio");
+        }
+        if (maxDepth < 1) {
+            maxDepth = 1;
+        }
+        if (maxDepth > 10) {
+            maxDepth = 10;
+        }
+
+        Set<String> processedVersions = new HashSet<>();
+        Map<String, EnrichedDependencyDTO> allDependencies = new LinkedHashMap<>();
+
+        collectTransitiveDependencies(versionId, dependencyType, maxDepth, 0, processedVersions, allDependencies);
+
+        return new ArrayList<>(allDependencies.values());
+    }
+
+    private void collectTransitiveDependencies(
+            String versionId,
+            String dependencyType,
+            int maxDepth,
+            int currentDepth,
+            Set<String> processedVersions,
+            Map<String, EnrichedDependencyDTO> allDependencies
+    ) {
+        if (currentDepth >= maxDepth) {
+            return;
+        }
+
+        if (processedVersions.contains(versionId)) {
+            return;
+        }
+
+        processedVersions.add(versionId);
+
+        try {
+            List<ModrinthVersionDTO.DependencyDTO> dependencies;
+            if (dependencyType != null && !dependencyType.trim().isEmpty()) {
+                dependencies = getVersionDependenciesByType(versionId, dependencyType);
+            } else {
+                dependencies = getVersionDependencies(versionId);
+            }
+
+            if (dependencies.isEmpty()) {
+                return;
+            }
+
+            List<String> projectIds = dependencies.stream()
+                    .map(ModrinthVersionDTO.DependencyDTO::getProjectId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+
+            if (projectIds.isEmpty()) {
+                return;
+            }
+
+            Map<String, ModrinthProjectDTO> projectsMap = getProjectsBulk(projectIds);
+
+            for (ModrinthVersionDTO.DependencyDTO dep : dependencies) {
+                String depKey = dep.getProjectId() + "_" + dep.getVersionId();
+
+                if (!allDependencies.containsKey(depKey)) {
+                    EnrichedDependencyDTO enriched = new EnrichedDependencyDTO();
+                    enriched.setProjectId(dep.getProjectId());
+                    enriched.setVersionId(dep.getVersionId());
+                    enriched.setDependencyType(dep.getDependencyType());
+
+                    ModrinthProjectDTO project = projectsMap.get(dep.getProjectId());
+                    if (project != null) {
+                        enriched.setProjectName(project.getTitle());
+                        enriched.setProjectSlug(project.getSlug());
+                        enriched.setIconUrl(project.getIconUrl());
+                        enriched.setDescription(project.getDescription());
+                    }
+
+                    allDependencies.put(depKey, enriched);
+
+                    if (dep.getVersionId() != null && !dep.getVersionId().trim().isEmpty()) {
+                        collectTransitiveDependencies(
+                                dep.getVersionId(),
+                                dependencyType,
+                                maxDepth,
+                                currentDepth + 1,
+                                processedVersions,
+                                allDependencies
+                        );
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar dependências de " + versionId + ": " + e.getMessage());
+        }
+    }
+
+    @Override
+    public List<EnrichedDependencyDTO> getProjectTransitiveDependencies(
+            String projectId,
+            String loader,
+            String gameVersion,
+            String dependencyType,
+            int maxDepth
+    ) {
+        if (projectId == null || projectId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Project ID não pode ser vazio");
+        }
+        if (loader == null || loader.trim().isEmpty()) {
+            throw new IllegalArgumentException("Loader não pode ser vazio");
+        }
+        if (gameVersion == null || gameVersion.trim().isEmpty()) {
+            throw new IllegalArgumentException("Game version não pode ser vazia");
+        }
+
+        List<ModrinthVersionDTO> versions = getProjectVersions(projectId, List.of(loader), List.of(gameVersion));
+
+        if (versions == null || versions.isEmpty()) {
+            throw new ResourceNotFoundException("Nenhuma versão encontrada para o projeto " + projectId);
+        }
+
+        ModrinthVersionDTO latestVersion = versions.stream()
+                .filter(ver -> ver.getLoaders().contains(loader) && ver.getGameVersions().contains(gameVersion))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Nenhuma versão compatível encontrada para loader '" + loader +
+                        "' e game version '" + gameVersion + "'"
+                ));
+
+        return getTransitiveDependencies(latestVersion.getId(), dependencyType, maxDepth);
+    }
 
 }

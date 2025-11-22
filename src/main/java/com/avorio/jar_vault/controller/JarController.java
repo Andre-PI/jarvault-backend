@@ -5,6 +5,7 @@ import com.avorio.jar_vault.dto.BatchDeleteRequest;
 import com.avorio.jar_vault.dto.JarDTO;
 import com.avorio.jar_vault.dto.Message;
 import com.avorio.jar_vault.dto.UploadPayload;
+import com.avorio.jar_vault.dto.modrinth.JarModInfo;
 import com.avorio.jar_vault.service.JarService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/jar")
@@ -27,24 +27,26 @@ public class JarController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<String> uploadJar(MultipartFile file, @RequestParam(required = false) String projectId, @RequestParam(required = false) String loader, @RequestParam(required = false) String version) {
-        Map<String, String> payload = Map.of(
-                "projectId", projectId != null ? projectId : "",
-                "loader", loader != null ? loader : "",
-                "version", version != null ? version : ""
-        );
-        jarService.uploadJar(file, payload);
+    public ResponseEntity<String> uploadJar(MultipartFile file, @RequestBody(required = false)JarModInfo jarModInfo) {
+        jarService.uploadJar(file, jarModInfo);
         return ResponseEntity.ok("Jar uploaded successfully");
     }
 
-    @PostMapping("/upload/batch")
-    public ResponseEntity<UploadPayload> uploadBatchJars(@RequestParam("files") List<MultipartFile> files, @RequestParam(required = false) String projectId, @RequestParam(required = false) String loader, @RequestParam(required = false) String version) {
-        Map<String, String> payload = Map.of(
-                "projectId", projectId != null ? projectId : "",
-                "loader", loader != null ? loader : "",
-                "version", version != null ? version : ""
-        );
-        UploadPayload results = jarService.uploadBatchJars(files, payload);
+    @PostMapping(value = "/upload/batch", consumes = "multipart/form-data")
+    public ResponseEntity<UploadPayload> uploadBatchJars(
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "jarModInfo", required = false) String jarModInfoJson
+    ) {
+        List<JarModInfo> jarModInfo = null;
+        if (jarModInfoJson != null && !jarModInfoJson.isEmpty()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                jarModInfo = java.util.Arrays.asList(mapper.readValue(jarModInfoJson, JarModInfo[].class));
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(new UploadPayload(null, new Message("Invalid jarModInfo JSON: " + e.getMessage())));
+            }
+        }
+        UploadPayload results = jarService.uploadBatchJars(files, jarModInfo);
         return ResponseEntity.ok(results);
     }
 
