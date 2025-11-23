@@ -7,6 +7,7 @@ import com.avorio.jar_vault.dto.modrinth.*;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public interface ModrinthService {
@@ -17,6 +18,8 @@ public interface ModrinthService {
     ModrinthProjectDTO getProject(String projectId);
 
     List<ModrinthProjectInfoDTO> getProjectInfo(String projectId, String loaders, String gameVersions);
+
+    List<ModrinthProjectDTO> getProjectsInBulk(List<String> projectIds);
 
     List<ModrinthVersionDTO> getProjectVersions(String projectId, List<String> loaders, List<String> gameVersions);
 
@@ -40,7 +43,7 @@ public interface ModrinthService {
 
     List<ModrinthVersionDTO> getClientDependenciesFromProject(String projectId, String loader, String gameVersion);
 
-    java.util.Map<String, ModrinthProjectDTO> getProjectsBulk(List<String> projectIds);
+    Map<String, ModrinthProjectDTO> getProjectsBulk(List<String> projectIds);
 
     List<EnrichedDependencyDTO> getTransitiveDependencies(String versionId, String dependencyType, int maxDepth);
 

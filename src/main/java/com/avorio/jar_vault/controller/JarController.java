@@ -6,6 +6,8 @@ import com.avorio.jar_vault.dto.JarDTO;
 import com.avorio.jar_vault.dto.Message;
 import com.avorio.jar_vault.dto.UploadPayload;
 import com.avorio.jar_vault.dto.modrinth.JarModInfo;
+import com.avorio.jar_vault.dto.modrinth.ModrinthProjectDTO;
+import com.avorio.jar_vault.dto.modrinth.ModrinthVersionDTO;
 import com.avorio.jar_vault.service.JarService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -55,6 +57,11 @@ public class JarController {
         jarService.isJarInDatabase(modName, loaders, gameVersions);
         return ResponseEntity.ok(new Message("Jar not uploaded yet"));
     }
+    @GetMapping("/check/{projectId}")
+    public ResponseEntity<Message> checkJarByProjectId(@PathVariable String projectId) {
+        jarService.isJarInDatabaseByProject(projectId);
+        return ResponseEntity.ok(new Message("Jar not uploaded yet"));
+    }
 
     @GetMapping("/check/{hash}")
     public ResponseEntity<Message> checkJarByHash(@PathVariable String hash) {
@@ -72,6 +79,11 @@ public class JarController {
     @GetMapping("/get/all")
     public ResponseEntity<Page<JarDTO>> getJars(@PageableDefault(size = 20)Pageable pageable){
         return ResponseEntity.ok(jarService.getAllJars(pageable));
+    }
+
+    @GetMapping("/get/all-client")
+    public ResponseEntity<List<ModrinthVersionDTO>> getJar (){
+        return ResponseEntity.ok(jarService.getClientJars());
     }
 
     @PostMapping("/delete")

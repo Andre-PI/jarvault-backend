@@ -5,26 +5,29 @@ import com.avorio.jar_vault.dto.JarDTO;
 import com.avorio.jar_vault.dto.Message;
 import com.avorio.jar_vault.dto.UploadPayload;
 import com.avorio.jar_vault.dto.modrinth.JarModInfo;
+import com.avorio.jar_vault.dto.modrinth.ModrinthProjectDTO;
 import com.avorio.jar_vault.dto.modrinth.ModrinthProjectInfoDTO;
+import com.avorio.jar_vault.dto.modrinth.ModrinthVersionDTO;
 import com.avorio.jar_vault.exception.JarAlreadyExists;
 import com.avorio.jar_vault.model.Jars;
 import com.avorio.jar_vault.model.JarsRepository;
 import com.avorio.jar_vault.utils.JarUtil;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import javax.swing.text.html.Option;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,6 +36,7 @@ public class JarServiceImpl implements JarService{
     private final JarUtil jarUtil;
     private final JarsRepository jarsRepository;
     private final ModrinthService modrinthService;
+    private final RestTemplate restTemplate;
 
     @Value("${password.key}")
     private String adminKey;
@@ -41,10 +45,11 @@ public class JarServiceImpl implements JarService{
     private String directoryPath;
 
 
-    public JarServiceImpl(JarUtil jarUtil, JarsRepository jarsRepository, ModrinthService modrinthService) {
+    public JarServiceImpl(JarUtil jarUtil, JarsRepository jarsRepository, ModrinthService modrinthService, RestTemplate restTemplate) {
         this.jarUtil = jarUtil;
         this.jarsRepository = jarsRepository;
         this.modrinthService = modrinthService;
+        this.restTemplate = restTemplate;
     }
 
     @Override
@@ -82,6 +87,13 @@ public class JarServiceImpl implements JarService{
     }
 
     @Override
+    public void isJarInDatabaseByProject(String projectId) {
+        if (jarsRepository.existsByProjectId((projectId)) ){
+            throw new JarAlreadyExists("Jar with project ID " + projectId + " already exists");
+        }
+
+    }
+    @Override
     public void isJarInDatabase(String hash) {
         if (jarsRepository.existsByHash(hash)) {
             throw new JarAlreadyExists("Jar with hash " + hash + " already exists in the database.");
@@ -90,7 +102,7 @@ public class JarServiceImpl implements JarService{
 
     @Override
     public void uploadJar(MultipartFile jarFile, JarModInfo jarModInfo) {
-        Jars jar = jarUtil.prepareJarModel(jarFile, java.util.Optional.ofNullable(jarModInfo));
+        Jars jar = jarUtil.prepareJarModel(jarFile, Optional.ofNullable(jarModInfo));
         if(jarsRepository.existsByHash(jar.getHash())) {
             throw new JarAlreadyExists("This jar already exists in the database");
         }
@@ -170,5 +182,53 @@ public class JarServiceImpl implements JarService{
             }
         }
         jarsRepository.deleteAllById(Arrays.asList(request.getListOfIds()));
+    }
+
+
+
+
+    @Override
+    public List<ModrinthVersionDTO> getClientJars() {
+        List<Jars> jars = jarsRepository.findAll();
+
+        if (jars.isEmpty()) {
+            return List.of();
+        }
+
+        String loader = jars.get(0).getLoader();
+        String gameVersion = jars.get(0).getVersion();
+
+        List<String> projectIds = jars.stream()
+                .map(Jars::getProjectId)
+                .distinct()
+                .toList();
+
+
+        List<ModrinthProjectDTO> projects = modrinthService.getProjectsInBulk(projectIds);
+
+        List<ModrinthProjectDTO> clientRequiredProjects = projects.stream()
+                .filter(p -> "required".equalsIgnoreCase(p.getClientSide()))
+                .toList();
+
+        List<ModrinthVersionDTO> finalVersions = new ArrayList<>();
+
+
+        for (ModrinthProjectDTO project : clientRequiredProjects) {
+            try {
+                List<ModrinthVersionDTO> versions = modrinthService.getProjectVersions(
+                        project.getSlug(),
+                        List.of(loader),
+                        List.of(gameVersion)
+                );
+
+                if (!versions.isEmpty()) {
+
+                    finalVersions.add(versions.get(0));
+                }
+            } catch (Exception e) {
+            }
+        }
+
+        return finalVersions;
     }
 }

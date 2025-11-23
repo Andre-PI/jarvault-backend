@@ -6,6 +6,7 @@ import com.avorio.jar_vault.exception.AlgorithmErrorException;
 import com.avorio.jar_vault.exception.JarAlreadyExists;
 import com.avorio.jar_vault.model.Jars;
 import com.avorio.jar_vault.model.JarsRepository;
+import com.avorio.jar_vault.service.ModrinthService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,13 +24,15 @@ import java.util.Optional;
 
 @Component
 public class JarUtil {
+    private final ModrinthService modrinthService;
     @Value("${jar.storage.directory}")
     private  String directoryPath;
 
     private final JarsRepository jarsRepository;
 
-    public JarUtil(JarsRepository jarsRepository) {
+    public JarUtil(JarsRepository jarsRepository, ModrinthService modrinthService) {
         this.jarsRepository = jarsRepository;
+        this.modrinthService = modrinthService;
     }
 
     public Jars prepareJarModel(MultipartFile jarFile, Optional<JarModInfo> jarModInfo) {
@@ -67,7 +70,7 @@ public class JarUtil {
         return jars;
     }
 
-    private String hashJar(MultipartFile jarFile) {
+    public String hashJar(MultipartFile jarFile) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA512");
@@ -99,6 +102,10 @@ public class JarUtil {
         jarDTO.setLoader(jar.getLoader());
         jarDTO.setProjectId(jar.getProjectId());
         jarDTO.setSize(jar.getSize());
+        modrinthService.getProjectInfo(jarDTO.getProjectId(), jarDTO.getLoader(), jarDTO.getVersion())
+                .stream()
+                .findFirst()
+                .ifPresent(jarDTO::setClientRequiredMods);
         return jarDTO;
     }
 }

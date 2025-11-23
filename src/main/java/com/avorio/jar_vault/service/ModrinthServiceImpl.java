@@ -159,11 +159,39 @@ public class ModrinthServiceImpl implements ModrinthService {
     }
 
     @Override
+    public List<ModrinthProjectDTO> getProjectsInBulk(List<String> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) {
+            return List.of();
+        }
+
+        // A Modrinth aceita IDs no formato: ["id1", "id2"]
+        String idsJson = "[" + projectIds.stream()
+                .map(id -> "\"" + id + "\"")
+                .collect(Collectors.joining(",")) + "]";
+
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(modrinthApiUrl + "/v2/projects")
+                .queryParam("ids", idsJson);
+
+        try {
+            ResponseEntity<List<ModrinthProjectDTO>> response = restTemplate.exchange(
+                    builder.build().toUri(),
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<>() {}
+            );
+            return response.getBody() != null ? response.getBody() : List.of();
+        } catch (Exception e) {
+            // Log o erro aqui
+            return List.of();
+        }
+    }
+    @Override
     @Cacheable(value = "modrinthVersions", key = "#projectId + '_' + #loaders + '_' + #gameVersions")
     @Retryable(
             retryFor = {RestClientException.class, ApiOfflineException.class},
             backoff = @Backoff(delay = 2000, multiplier = 2)
     )
+
     public List<ModrinthVersionDTO> getProjectVersions(String projectId, List<String> loaders, List<String> gameVersions) {
         if (projectId == null || projectId.trim().isEmpty()) {
             throw new IllegalArgumentException("Project ID não pode ser vazio");
